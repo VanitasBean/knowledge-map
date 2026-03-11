@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>海绵城市知识图谱</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); min-height: 100vh; color: #333; }
+        .container { display: flex; flex-direction: column; height: 100vh; }
+        header { background: white; padding: 20px 40px; border-bottom: 2px solid #e0e0e0; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        h1 { font-size: 32px; background: linear-gradient(90deg, #0066cc, #6600cc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 10px; }
+        .subtitle { font-size: 14px; color: #888; }
+        .search-box { display: flex; gap: 10px; margin-top: 15px; max-width: 600px; }
+        .search-input { flex: 1; padding: 12px 20px; font-size: 16px; border: 2px solid #ddd; border-radius: 30px; outline: none; }
+        .search-input:focus { border-color: #0066cc; }
+        .search-btn { padding: 12px 30px; font-size: 15px; border: none; border-radius: 30px; background: linear-gradient(135deg, #0066cc, #6600cc); color: white; cursor: pointer; }
+        .main { display: flex; flex: 1; overflow: hidden; }
+        .graph-area { flex: 1; position: relative; background: white; border-right: 2px solid #e0e0e0; }
+        #network { width: 100%; height: 100%; }
+        .sidebar { width: 380px; background: #f9f9f9; padding: 20px; overflow-y: auto; }
+        .sidebar-title { font-size: 20px; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #e0e0e0; }
+        .node-card { background: white; border-radius: 12px; padding: 18px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .node-title { font-size: 20px; color: #0066cc; margin-bottom: 8px; }
+        .node-type { display: inline-block; padding: 4px 12px; font-size: 12px; border-radius: 15px; background: #6600cc; color: white; margin-bottom: 10px; }
+        .node-desc { font-size: 14px; line-height: 1.7; color: #555; }
+        .empty-tip { text-align: center; color: #999; padding: 40px; font-size: 16px; }
+        .legend { position: absolute; bottom: 20px; left: 20px; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .legend-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 13px; color: #555; }
+        .legend-dot { width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; }
+        .stats { position: absolute; top: 15px; left: 15px; background: rgba(255,255,255,0.95); padding: 10px 18px; border-radius: 8px; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .tips { margin-top: 20px; padding: 15px; background: #e8f4ff; border-radius: 8px; font-size: 13px; color: #555; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧠 海绵城市知识图谱</h1>
+            <div class="subtitle">基于PPT内容自动构建的知识图谱</div>
+            <div class="search-box">
+                <input type="text" class="search-input" id="searchInput" placeholder="搜索关键词..." onkeyup="if(event.key==='Enter')search()">
+                <button class="search-btn" onclick="search()">搜索</button>
+            </div>
+        </header>
+        
+        <div class="main">
+            <div class="graph-area">
+                <div id="network"></div>
+                <div class="stats">节点: <span id="nodeCount">0</span> | 边: <span id="edgeCount">0</span></div>
+                <div class="legend">
+                    <div class="legend-item"><div class="legend-dot" style="background:#00d4ff"></div>核心概念</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#7c3aed"></div>技术方法</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>功能目标</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div>影响因素</div>
+                    <div class="legend-item"><div class="legend-dot" style="background:#ec4899"></div>效益评估</div>
+                </div>
+            </div>
+            
+            <div class="sidebar">
+                <div class="sidebar-title" id="panelTitle">知识导航</div>
+                <div id="nodeDetail" style="display:none;">
+                    <div class="node-card">
+                        <div class="node-title" id="nodeTitle"></div>
+                        <span class="node-type" id="nodeType"></span>
+                        <div class="node-desc" id="nodeDesc"></div>
+                    </div>
+                </div>
+                <div id="emptyState" class="empty-tip">
+                    点击图谱中的节点<br>查看详情
+                </div>
+                <div class="tips">
+                    <strong>💡 使用提示：</strong><br>
+                    • 点击节点查看详情<br>
+                    • 拖拽可移动节点<br>
+                    • 滚轮缩放图谱<br>
+                    • 使用搜索快速定位
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const graphData = {"nodes": [{"id": 1, "label": "海绵城市", "type": "core", "description": "指城市能够像海绵一样，在适应环境变化和应对自然灾害等方面具有良好的'弹性'，下雨时吸水、蓄水、渗水、净水，需要时将蓄存的水'释放'并加以利用。其核心是在确保城市排水防涝安全的前提下，最大限度地实现雨水在城市区域的积存、渗透和净化，促进雨水资源的利用和生态环境保护。", "color": "#00d4ff"}, {"id": 2, "label": "雨水管理", "type": "core", "description": "指对城市中雨水的收集、储存、净化、排放及利用等全过程进行系统性规划与管理，旨在减少城市洪涝灾害，改善水环境质量，并提升雨水资源利用率。", "color": "#00d4ff"}, {"id": 3, "label": "生态修复", "type": "core", "description": "指通过自然或人工手段恢复城市生态系统功能，包括水体、植被、土壤等要素的修复，以增强城市的生态承载力和自我调节能力。", "color": "#00d4ff"}, {"id": 4, "label": "低影响开发", "type": "core", "description": "指在场地开发过程中采用源头、分散式措施维持场地开发前的水文特征，也称为低影响设计（LID）或低影响城市设计和开发（LIUDD）。其核心是通过自然方式控制雨水径流，减少对水文循环的干扰。", "color": "#00d4ff"}, {"id": 5, "label": "绿色基础设施", "type": "core", "description": "指由自然或半自然系统构成的城市基础设施，如绿地、湿地、雨水花园等，用于提供生态服务功能，如雨水管理、空气净化、生物多样性保护等。", "color": "#00d4ff"}, {"id": 6, "label": "透水铺装", "type": "method", "description": "一种通过使用透水材料铺设地面，使雨水能够渗透到地下，减少地表径流，提高雨水下渗能力的技术方法。", "color": "#7c3aed"}, {"id": 7, "label": "雨水花园", "type": "method", "description": "一种利用植物和土壤组合来收集、过滤和渗透雨水的景观设施，常设置于建筑周边或道路旁，用于缓解雨水径流压力，改善水质。", "color": "#7c3aed"}, {"id": 8, "label": "生物滞留设施", "type": "method", "description": "指通过种植植物、铺设透水层等方式，使雨水在设施内停留、渗透和净化，从而减少地表径流和污染物排放的设施。", "color": "#7c3aed"}, {"id": 9, "label": "绿色屋顶", "type": "method", "description": "指在建筑物屋顶上种植植物，形成一个具有雨水滞留、蒸发、净化等功能的绿化系统，有助于降低屋顶温度、减少雨水径流量。", "color": "#7c3aed"}, {"id": 10, "label": "下沉式绿地", "type": "method", "description": "指低于周围地面的绿地，可接收周边雨水径流，起到调蓄、渗透和净化作用，减少内涝风险。", "color": "#7c3aed"}, {"id": 11, "label": "雨水渗透", "type": "goal", "description": "指通过各种技术手段，使雨水能够渗透入地下，补充地下水，减少地表径流，提高雨水资源利用率。", "color": "#10b981"}, {"id": 12, "label": "雨水净化", "type": "goal", "description": "指通过物理、化学或生物方法去除雨水中的悬浮物、有机物和污染物，改善雨水水质，使其可用于灌溉、景观用水等。", "color": "#10b981"}, {"id": 13, "label": "雨水利用", "type": "goal", "description": "指通过收集、储存和处理雨水，将其用于非饮用水用途，如绿化灌溉、道路冲洗等，以减轻城市供水压力。", "color": "#10b981"}, {"id": 14, "label": "防洪排涝", "type": "goal", "description": "指通过建设排水系统、调蓄设施等，防止城市在暴雨期间发生严重内涝，保障城市运行安全和居民生活稳定。", "color": "#10b981"}, {"id": 15, "label": "生态保护", "type": "goal", "description": "指通过海绵城市建设，维护和恢复城市生态系统功能，增强城市对气候变化的适应能力，提升生物多样性。", "color": "#10b981"}, {"id": 16, "label": "气候因素", "type": "factor", "description": "指降雨量、降雪、风速、温度等气象条件，对城市雨水管理系统的性能和设计标准产生直接影响。", "color": "#f97316"}, {"id": 17, "label": "地形地貌", "type": "factor", "description": "指城市所在地区的地势高低、坡度、河流分布等地理特征，影响雨水径流路径和排水效率。", "color": "#f97316"}, {"id": 18, "label": "土壤条件", "type": "factor", "description": "指土壤类型、渗透率、含水量等特性，决定了雨水下渗能力和地下水补给情况。", "color": "#f97316"}, {"id": 19, "label": "城市密度", "type": "factor", "description": "指城市人口和建筑密度，影响雨水径流的产生和排水系统的负荷能力。", "color": "#f97316"}, {"id": 20, "label": "经济效益", "type": "benefit", "description": "指海绵城市建设带来的直接经济收益，如减少洪涝损失、降低市政维护成本、提升土地价值等。", "color": "#ec4899"}, {"id": 21, "label": "生态效益", "type": "benefit", "description": "指海绵城市建设对城市生态环境的积极影响，如改善水质、增加绿地面积、提升生物多样性等。", "color": "#ec4899"}, {"id": 22, "label": "社会效益", "type": "benefit", "description": "指海绵城市建设带来的社会层面的好处，如提升居民生活质量、增强城市宜居性、改善公共健康状况等。", "color": "#ec4899"}, {"id": 23, "label": "环境效益", "type": "benefit", "description": "指海绵城市建设对城市环境质量的改善，如减少水污染、降低热岛效应、提升城市景观等。", "color": "#ec4899"}], "edges": [{"from": 1, "to": 4}, {"from": 1, "to": 2}, {"from": 1, "to": 5}, {"from": 6, "to": 11}, {"from": 7, "to": 12}, {"from": 8, "to": 12}, {"from": 9, "to": 11}, {"from": 10, "to": 11}, {"from": 1, "to": 14}, {"from": 1, "to": 13}, {"from": 1, "to": 15}, {"from": 1, "to": 20}, {"from": 1, "to": 21}, {"from": 1, "to": 22}, {"from": 1, "to": 23}, {"from": 4, "to": 6}, {"from": 4, "to": 7}, {"from": 5, "to": 8}, {"from": 5, "to": 9}]};
+
+        const typeLabels = { core: '核心概念', method: '技术方法', goal: '功能目标', factor: '影响因素', benefit: '效益评估' };
+        let network = null;
+
+        function initNetwork() {
+            const nodes = graphData.nodes.map(n => ({ id: n.id, label: n.label, title: n.description, color: n.color, size: n.type === 'core' ? 28 : 22 }));
+            const edges = graphData.edges.map(e => ({ from: e.from, to: e.to }));
+            document.getElementById('nodeCount').textContent = graphData.nodes.length;
+            document.getElementById('edgeCount').textContent = graphData.edges.length;
+            
+            network = new vis.Network(document.getElementById('network'), { nodes, edges }, {
+                nodes: { shape: 'dot', size: 22, font: { size: 15, color: '#333' }, borderWidth: 2 },
+                edges: { width: 1.5, color: { color: 'rgba(0,0,0,0.15)' }, smooth: { type: 'cubicBezier' } },
+                physics: { enabled: true, stabilization: { iterations: 100 }, repulsion: { nodeDistance: 160 }, spring: { stiffness: 0.04 } },
+                interaction: { hover: true, tooltipDelay: 300 }
+            });
+            
+            network.on('click', params => {
+                if (params.nodes.length > 0) {
+                    const node = graphData.nodes.find(n => n.id === params.nodes[0]);
+                    if (node) showNode(node);
+                } else {
+                    hideNode();
+                }
+            });
+        }
+
+        function showNode(node) {
+            document.getElementById('panelTitle').textContent = '节点详情';
+            document.getElementById('nodeDetail').style.display = 'block';
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('nodeTitle').textContent = node.label;
+            document.getElementById('nodeType').textContent = typeLabels[node.type] || '知识点';
+            document.getElementById('nodeDesc').textContent = node.description;
+        }
+
+        function hideNode() {
+            document.getElementById('panelTitle').textContent = '知识导航';
+            document.getElementById('nodeDetail').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'block';
+        }
+
+        function search() {
+            const keyword = document.getElementById('searchInput').value.trim();
+            if (!keyword) return;
+            const results = graphData.nodes.filter(n => n.label.includes(keyword) || n.description.includes(keyword));
+            if (results.length > 0) {
+                network.selectNodes([results[0].id]);
+                network.focus(results[0].id, { scale: 1.2, animation: true });
+                showNode(results[0]);
+            } else {
+                alert('未找到相关知识点');
+            }
+        }
+
+        window.onload = initNetwork;
+    </script>
+</body>
+</html>
